@@ -54,6 +54,7 @@ async function ensureTimeTrackerIndexes() {
 
     // Ensure the correct partial unique index exists
     const hasPartial = (await collection.indexes()).some(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (ix) => ix.name === 'screenshots.public_id_1' && (ix as any).partialFilterExpression
     );
     if (!hasPartial) {
