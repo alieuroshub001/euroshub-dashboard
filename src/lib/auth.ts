@@ -59,14 +59,15 @@ export function generateOTP(length = 6): string {
 
 export async function createOTPRecord(
   email: string,
-  type: IOTP['type']
+  type: IOTP['type'],
+  referenceEmail?: string
 ): Promise<string> {
   const OTP = (await import('@/models/OTP')).default;
   const otp = generateOTP();
  
   await OTP.findOneAndUpdate(
     { email, type },
-    { otp, expiresAt: new Date(Date.now() + 15 * 60 * 1000) },
+    { otp, expiresAt: new Date(Date.now() + 15 * 60 * 1000), referenceEmail },
     { upsert: true, new: true }
   );
   // Send OTP via email
@@ -79,16 +80,17 @@ export async function verifyOTP(
   email: string,
   otp: string,
   type: IOTP['type']
-): Promise<boolean> {
+): Promise<{ isValid: boolean; referenceEmail?: string }> {
   const OTP = (await import('@/models/OTP')).default;
   const record = await OTP.findOne({ email, otp, type });
  
   if (!record || record.expiresAt < new Date()) {
-    return false;
+    return { isValid: false };
   }
  
-  await OTP.deleteOne({ id: record.id });
-  return true;
+  const referenceEmail = (record as any).referenceEmail as string | undefined;
+  await OTP.deleteOne({ _id: (record as any)._id });
+  return { isValid: true, referenceEmail };
 }
 
 // Token utilities

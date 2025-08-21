@@ -43,7 +43,7 @@ export async function uploadFile(
 
   const uploadOptions: UploadApiOptions = {
     folder,
-    resource_type: resource_type === 'raw' ? 'auto' : resource_type,
+    resource_type: (resource_type === 'raw' ? 'auto' : resource_type) as 'auto' | 'image' | 'video' | 'raw',
     allowed_formats,
     tags,
   };
@@ -77,7 +77,7 @@ export async function uploadFiles(
       try {
         const resp = await cloudinary.uploader.upload(
           typeof file === 'string' ? file : `data:application/octet-stream;base64,${(file as Buffer).toString('base64')}`,
-          { folder: options.folder, resource_type: options.resource_type === 'raw' ? 'auto' : options.resource_type, tags: options.tags }
+          { folder: options.folder, resource_type: ((options.resource_type === 'raw' ? 'auto' : options.resource_type) as 'auto' | 'image' | 'video' | 'raw'), tags: options.tags }
         );
         return { success: true as const, data: toAttachment(resp, uploadedBy) };
       } catch (err) {

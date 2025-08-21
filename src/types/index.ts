@@ -1,10 +1,11 @@
 // types/index.ts
 // Update your types/index.ts
+import type { UserRole } from './common';
 export interface IUser {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'superadmin';
+  role: UserRole;
   emailVerified: boolean;
   verificationToken?: string; // Add this line
   createdAt: Date;
@@ -20,7 +21,7 @@ export interface ISessionUser {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'superadmin';
+  role: UserRole;
 }
 
 export interface ISession {
@@ -36,6 +37,7 @@ export interface IOTP {
   type: 'verification' | 'password-reset';
   expiresAt: Date;
   createdAt: Date;
+  referenceEmail?: string;
 }
 
 export interface IPasswordResetToken {
@@ -89,11 +91,11 @@ export interface IUserActivity {
   metadata?: Record<string, unknown>;
 }
 // // Main types export file
-// export * from './common';
+export * from './common';
 // export * from './common/api';
 // export * from './common/auth';
 // export * from './common/permissions';
-// export * from './common/uploads';
+export * from './common/uploads';
 
 // // Module exports
 // export * from './modules/profile';
