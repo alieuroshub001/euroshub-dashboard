@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // lib/auth.ts
 import User from '@/models/User';
 import { IOTP } from '@/types';
@@ -20,6 +21,7 @@ interface ExtendedUser extends NextAuthUser {
 declare module 'next-auth' {
   interface Session {
     user: {
+      image: any;
       id: string;
       name?: string | null;
       email?: string | null;
