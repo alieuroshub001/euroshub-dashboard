@@ -1,9 +1,10 @@
+import { verifyPassword } from '@/lib/auth';
+import connectToDatabase from '@/lib/db';
+import User from '@/models/User';
+import { ISessionUser } from '@/types';
+import type { UserRole } from '@/types/common';
 import NextAuth, { AuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import connectToDatabase from '@/lib/db';
-import { verifyPassword } from '@/lib/auth';
-import User from '@/models/User';
-import { ISessionUser, UserRole } from '@/types';
 
 interface ExtendedUser {
   id: string;
@@ -99,3 +100,4 @@ const authOptions: AuthOptions = {
 
 const handler = NextAuth(authOptions);
 export { handler as GET, handler as POST };
+

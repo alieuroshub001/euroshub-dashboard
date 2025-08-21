@@ -1,20 +1,19 @@
 // lib/auth.ts
+import User from '@/models/User';
+import { IOTP } from '@/types';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { IOTP } from '@/types';
-import { sendOTPEmail } from './email';
-import NextAuth, { SessionStrategy, User as NextAuthUser, Session, Account, Profile } from 'next-auth';
-import { JWT } from 'next-auth/jwt';
+import NextAuth, { Account, User as NextAuthUser, Profile, Session, SessionStrategy } from 'next-auth';
 import { AdapterUser } from 'next-auth/adapters';
+import { JWT } from 'next-auth/jwt';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import User from '@/models/User';
 import connectToDatabase from './db';
+import { sendOTPEmail } from './email';
 
 // Extended user type for NextAuth
 interface ExtendedUser extends NextAuthUser {
   id: string;
   role: string;
-  image?: string;
 }
 
 // Type augmentation for NextAuth
@@ -25,7 +24,6 @@ declare module 'next-auth' {
       name?: string | null;
       email?: string | null;
       role: string;
-      image?: string | null;
     };
   }
 }
@@ -34,7 +32,6 @@ declare module 'next-auth/jwt' {
   interface JWT {
     id: string;
     role: string;
-    image?: string;
   }
 }
 
@@ -68,17 +65,11 @@ export async function createOTPRecord(
   const OTP = (await import('@/models/OTP')).default;
   const otp = generateOTP();
  
-  // Store OTP with the email where it was sent
   await OTP.findOneAndUpdate(
     { email, type },
-    { 
-      otp, 
-      expiresAt: new Date(Date.now() + 15 * 60 * 1000),
-      referenceEmail: referenceEmail || email
-    },
+    { otp, expiresAt: new Date(Date.now() + 15 * 60 * 1000), referenceEmail },
     { upsert: true, new: true }
   );
-  
   // Send OTP via email
   await sendOTPEmail(email, otp, type);
  
@@ -91,24 +82,17 @@ export async function verifyOTP(
   type: IOTP['type']
 ): Promise<{ isValid: boolean; referenceEmail?: string }> {
   const OTP = (await import('@/models/OTP')).default;
-  
-  // First try to find OTP with the provided email
-  let record = await OTP.findOne({ email, otp, type });
-  
-  // If not found, try to find OTP where this email is the reference email
-  if (!record) {
-    record = await OTP.findOne({ referenceEmail: email, otp, type });
-  }
+  const record = await OTP.findOne({ email, otp, type });
  
   if (!record || record.expiresAt < new Date()) {
     return { isValid: false };
   }
  
-  await OTP.deleteOne({ _id: record._id });
-  return { 
-    isValid: true, 
-    referenceEmail: record.referenceEmail || record.email 
-  };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const referenceEmail = (record as any).referenceEmail as string | undefined;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await OTP.deleteOne({ _id: (record as any)._id });
+  return { isValid: true, referenceEmail };
 }
 
 // Token utilities
@@ -135,31 +119,27 @@ export const authOptions = {
         email: { label: 'Email', type: 'email' },
         password: { label: 'Password', type: 'password' }
       },
-      async authorize(
-        credentials: Record<"email" | "password", string> | undefined
-      ): Promise<ExtendedUser | null> {
-        if (!credentials?.email || !credentials?.password) {
-          throw new Error('Missing email or password');
-        }
-
+      async authorize(credentials): Promise<ExtendedUser | null> {
         await connectToDatabase();
-
-        const user = await User.findOne({ email: credentials.email }).select('+password');
+       
+        const user = await User.findOne({ email: credentials?.email }).select('+password');
         if (!user) throw new Error('No user found with this email');
-
+       
         if (!user.emailVerified) {
           throw new Error('Please verify your email first');
         }
-
-        const isValid = await verifyPassword(credentials.password, user.password);
+       
+        const isValid = await verifyPassword(
+          credentials?.password || '',
+          user.password
+        );
         if (!isValid) throw new Error('Incorrect password');
-
+       
         return {
           id: user._id.toString(),
           name: user.name,
           email: user.email,
-          role: user.role,
-          image: user.profileImage
+          role: user.role
         };
       }
     })
@@ -170,7 +150,6 @@ export const authOptions = {
       if (user && 'role' in user) {
         token.id = user.id;
         token.role = (user as ExtendedUser).role;
-        token.image = (user as ExtendedUser).image;
       }
       return token;
     },
@@ -178,7 +157,6 @@ export const authOptions = {
       if (session.user) {
         session.user.id = token.id;
         session.user.role = token.role;
-        session.user.image = token.image;
       }
       return session;
     }
