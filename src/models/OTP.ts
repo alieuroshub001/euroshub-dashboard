@@ -10,6 +10,7 @@ const OTPSchema: Schema = new Schema({
     enum: ['verification', 'password-reset'], 
     required: true 
   },
+  referenceEmail: { type: String },
   expiresAt: { 
     type: Date, 
     required: true,

@@ -41,9 +41,16 @@ export async function uploadFile(
 ): Promise<IUploadResponse> {
   const { folder, resource_type = 'raw', allowed_formats, tags } = options;
 
+  const apiResourceType: UploadApiOptions['resource_type'] =
+    resource_type === 'raw'
+      ? 'auto'
+      : resource_type === 'audio'
+        ? 'auto'
+        : resource_type;
+
   const uploadOptions: UploadApiOptions = {
     folder,
-    resource_type: resource_type === 'raw' ? 'auto' : resource_type,
+    resource_type: apiResourceType,
     allowed_formats,
     tags,
   };
@@ -75,9 +82,16 @@ export async function uploadFiles(
   const results = await Promise.all(
     files.map(async ({ file, filename }) => {
       try {
+        const apiResourceType: UploadApiOptions['resource_type'] =
+          (options.resource_type || 'raw') === 'raw'
+            ? 'auto'
+            : options.resource_type === 'audio'
+              ? 'auto'
+              : (options.resource_type as Exclude<IUploadOptions['resource_type'], 'audio'>);
+
         const resp = await cloudinary.uploader.upload(
           typeof file === 'string' ? file : `data:application/octet-stream;base64,${(file as Buffer).toString('base64')}`,
-          { folder: options.folder, resource_type: options.resource_type === 'raw' ? 'auto' : options.resource_type, tags: options.tags }
+          { folder: options.folder, resource_type: apiResourceType, tags: options.tags }
         );
         return { success: true as const, data: toAttachment(resp, uploadedBy) };
       } catch (err) {
@@ -97,12 +111,13 @@ export async function uploadFiles(
   return { attachments, failed };
 }
 
-export async function deleteFile(publicId: string, resourceType: 'image' | 'video' | 'raw' | 'auto' = 'auto') {
-  const rt = resourceType === 'auto' ? 'image' : resourceType;
+export async function deleteFile(publicId: string, resourceType: 'image' | 'video' | 'raw' | 'auto' | 'audio' = 'auto') {
+  const rt: UploadApiOptions['resource_type'] =
+    resourceType === 'auto' ? 'image' : resourceType === 'audio' ? 'auto' : resourceType;
   try {
-    return await cloudinary.uploader.destroy(publicId, { resource_type: rt as unknown });
+    return await cloudinary.uploader.destroy(publicId, { resource_type: rt });
   } catch (e) {
-    return await cloudinary.uploader.destroy(publicId, { resource_type: 'raw' as unknown });
+    return await cloudinary.uploader.destroy(publicId, { resource_type: 'raw' });
   }
 }
 

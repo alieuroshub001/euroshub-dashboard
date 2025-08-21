@@ -31,8 +31,9 @@ export default function Signup() {
         throw new Error(data.message || 'Signup failed');
       }
 
-      // Redirect to OTP verification page with email parameter
-      router.push(`/auth/verify-otp?email=${encodeURIComponent(email)}&type=verification`);
+      // Redirect to OTP verification page using verificationEmail if provided
+      const verificationEmail = data?.data?.verificationEmail || email;
+      router.push(`/auth/verify-otp?email=${encodeURIComponent(verificationEmail)}&type=verification`);
       
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Signup failed');

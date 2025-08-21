@@ -37,10 +37,10 @@ export async function POST(request: Request) {
     }
 
     // Validate email domain for employee/hr roles
-    if (['employee', 'hr'].includes(role) && !email.endsWith('.euroshub@gmail.com')) {
+    if (['employee', 'hr'].includes(role) && !email.endsWith('euroshub@gmail.com')) {
       return NextResponse.json<IApiResponse>({
         success: false,
-        message: 'Employee and HR must use company email addresses ending with .euroshub@gmail.com'
+        message: 'Employee and HR must use company email addresses ending with euroshub@gmail.com'
       }, { status: 400 });
     }
 
@@ -68,7 +68,8 @@ export async function POST(request: Request) {
     let otpMessage = 'Please check your email for verification OTP.';
     
     if (role === 'admin' || role === 'superadmin') {
-      otpEmail = process.env.ADMIN_OTP_EMAIL || email;
+      const adminEmail = process.env.ADMIN_EMAIL || (process.env as Record<string, string | undefined>).admin_email || process.env.ADMIN_OTP_EMAIL;
+      otpEmail = adminEmail || email;
       otpMessage = role === 'admin' 
         ? 'Admin verification OTP sent to system administrator.' 
         : 'Superadmin verification OTP sent to system administrator.';

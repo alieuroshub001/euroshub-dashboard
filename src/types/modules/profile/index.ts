@@ -13,6 +13,7 @@ export interface IUserBase {
   employeeId?: string;
   emailVerified: boolean;
   isActive: boolean;
+  verificationToken?: string;
 }
 
 // User with password (for auth)
