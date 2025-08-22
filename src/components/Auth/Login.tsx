@@ -1,7 +1,7 @@
 "use client"
 import { useState } from 'react';
-import { signIn } from 'next-auth/react';
-import { useRouter } from 'next/navigation'; // Updated import
+import { signIn, getSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 export default function Login() {
@@ -9,24 +9,44 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const router = useRouter(); // Now using the correct router
+  const router = useRouter();
+
+  // Get superadmin credentials from environment variables
+  const superadminEmail = process.env.NEXT_PUBLIC_SUPERADMIN_EMAIL;
+  const superadminPassword = process.env.NEXT_PUBLIC_SUPERADMIN_PASSWORD;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
-    const result = await signIn('credentials', {
-      redirect: false,
-      email,
-      password,
-    });
+    try {
+      const result = await signIn('credentials', {
+        redirect: false,
+        email,
+        password,
+        // Add skipVerification for superadmin
+        ...(email === superadminEmail && password === superadminPassword && {
+          skipVerification: 'true'
+        })
+      });
 
-    if (result?.error) {
-      setError(result.error);
+      if (result?.error) {
+        throw new Error(result.error);
+      }
+
+      // Get the session to determine user role and redirect appropriately
+      const session = await getSession();
+      if (session?.user?.role) {
+        router.push(`/dashboard/${session.user.role}`);
+      } else {
+        router.push('/dashboard');
+      }
+      router.refresh();
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed');
       setLoading(false);
-    } else {
-      router.push('/dashboard');
     }
   };
 
@@ -35,8 +55,11 @@ export default function Login() {
       <div className="max-w-md w-full space-y-8">
         <div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Admin Login
+            Sign In
           </h2>
+          <p className="mt-2 text-center text-sm text-gray-600">
+            Enter your credentials to access your account
+          </p>
         </div>
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative">
