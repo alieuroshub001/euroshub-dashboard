@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/lib/mongodb';
+import connectToDatabase from '@/lib/db';
 import { Chat, Message, User } from '@/models';
 import { IApiResponse, IChat, IMessage } from '@/types';
 import { verifyAuth } from '@/lib/auth';
@@ -10,7 +10,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    await connectDB();
+    await connectToDatabase();
     
     const authResult = await verifyAuth(req);
     if (!authResult.success) {
@@ -64,7 +64,7 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
-    await connectDB();
+    await connectToDatabase();
     
     const authResult = await verifyAuth(req);
     if (!authResult.success) {
@@ -140,7 +140,7 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    await connectDB();
+    await connectToDatabase();
     
     const authResult = await verifyAuth(req);
     if (!authResult.success) {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/lib/mongodb';
+import connectToDatabase from '@/lib/db';
 import { Task, Project, User } from '@/models';
 import { IApiResponse, ITask, ITaskWithDetails, ITaskFilter } from '@/types';
 import { verifyAuth } from '@/lib/auth';
@@ -7,7 +7,7 @@ import { verifyAuth } from '@/lib/auth';
 // GET /api/tasks - Get tasks with filters
 export async function GET(req: NextRequest) {
   try {
-    await connectDB();
+    await connectToDatabase();
     
     const authResult = await verifyAuth(req);
     if (!authResult.success) {
@@ -199,7 +199,7 @@ export async function GET(req: NextRequest) {
 // POST /api/tasks - Create new task
 export async function POST(req: NextRequest) {
   try {
-    await connectDB();
+    await connectToDatabase();
     
     const authResult = await verifyAuth(req);
     if (!authResult.success) {

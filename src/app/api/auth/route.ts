@@ -1,18 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/lib/mongodb';
+import connectToDatabase from '@/lib/db';
 import { User, OTP } from '@/models';
 import { IApiResponse, IUserWithPassword, IOTP } from '@/types';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { sendEmail } from '@/lib/email';
-import { generateOTP } from '@/lib/utils';
+import { generateOTP } from '@/lib/auth';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 // POST /api/auth - Handle authentication actions
 export async function POST(req: NextRequest) {
   try {
-    await connectDB();
+    await connectToDatabase();
     
     const { action, ...data } = await req.json();
 

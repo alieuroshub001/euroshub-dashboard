@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/lib/mongodb';
+import connectToDatabase from '@/lib/db';
 import { Chat, Message, User } from '@/models';
 import { IApiResponse, IChat, IChatWithDetails, IChatFilter } from '@/types';
 import { verifyAuth } from '@/lib/auth';
@@ -7,7 +7,7 @@ import { verifyAuth } from '@/lib/auth';
 // GET /api/chats - Get user's chats with filters
 export async function GET(req: NextRequest) {
   try {
-    await connectDB();
+    await connectToDatabase();
     
     const authResult = await verifyAuth(req);
     if (!authResult.success) {
@@ -133,7 +133,7 @@ export async function GET(req: NextRequest) {
 // POST /api/chats - Create new chat
 export async function POST(req: NextRequest) {
   try {
-    await connectDB();
+    await connectToDatabase();
     
     const authResult = await verifyAuth(req);
     if (!authResult.success) {
