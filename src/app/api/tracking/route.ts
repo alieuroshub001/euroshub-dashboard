@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/lib/mongodb';
+import connectToDatabase from '@/lib/db';
 import { TimeTrackerSession, TimeTrackerSettings, WorkDiary } from '@/models';
 import { IApiResponse, ITimeTrackerSession, ITimeTrackerSettings } from '@/types';
 import { verifyAuth } from '@/lib/auth';
@@ -7,7 +7,7 @@ import { verifyAuth } from '@/lib/auth';
 // GET /api/tracking - Get time tracker sessions
 export async function GET(req: NextRequest) {
   try {
-    await connectDB();
+    await connectToDatabase();
     
     const authResult = await verifyAuth(req);
     if (!authResult.success) {
@@ -109,7 +109,7 @@ export async function GET(req: NextRequest) {
 // POST /api/tracking - Start/stop time tracking session
 export async function POST(req: NextRequest) {
   try {
-    await connectDB();
+    await connectToDatabase();
     
     const authResult = await verifyAuth(req);
     if (!authResult.success) {

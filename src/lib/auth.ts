@@ -4,6 +4,8 @@ import User from '@/models/User';
 import { IOTP } from '@/types';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
+import { NextRequest } from 'next/server';
 import NextAuth, { Account, User as NextAuthUser, Profile, Session, SessionStrategy } from 'next-auth';
 import { AdapterUser } from 'next-auth/adapters';
 import { JWT } from 'next-auth/jwt';
@@ -177,3 +179,38 @@ export const authOptions = {
 
 // Export the NextAuth handler
 export default NextAuth(authOptions);
+
+// JWT verification function for API routes
+export async function verifyAuth(req: NextRequest) {
+  try {
+    const authHeader = req.headers.get('authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return { success: false, message: 'No token provided' };
+    }
+
+    const token = authHeader.substring(7);
+    const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+    
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    
+    // Connect to database and verify user exists
+    await connectToDatabase();
+    const user = await User.findById(decoded.id);
+    
+    if (!user) {
+      return { success: false, message: 'User not found' };
+    }
+
+    return { 
+      success: true, 
+      user: {
+        id: user._id.toString(),
+        email: user.email,
+        name: user.name,
+        role: user.role
+      }
+    };
+  } catch (error) {
+    return { success: false, message: 'Invalid token' };
+  }
+}

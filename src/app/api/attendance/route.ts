@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/lib/mongodb';
+import connectToDatabase from '@/lib/db';
 import { Attendance, User } from '@/models';
 import { IApiResponse, IAttendance, IAttendanceWithDetails, IAttendanceFilter, ICheckInOut } from '@/types';
 import { verifyAuth } from '@/lib/auth';
@@ -7,7 +7,7 @@ import { verifyAuth } from '@/lib/auth';
 // GET /api/attendance - Get attendance records with filters
 export async function GET(req: NextRequest) {
   try {
-    await connectDB();
+    await connectToDatabase();
     
     const authResult = await verifyAuth(req);
     if (!authResult.success) {
@@ -131,7 +131,7 @@ export async function GET(req: NextRequest) {
 // POST /api/attendance - Create attendance record or handle check-in/out
 export async function POST(req: NextRequest) {
   try {
-    await connectDB();
+    await connectToDatabase();
     
     const authResult = await verifyAuth(req);
     if (!authResult.success) {

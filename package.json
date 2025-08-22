@@ -10,10 +10,12 @@
   },
   "dependencies": {
     "@headlessui/react": "^2.2.7",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/nodemailer": "^7.0.1",
     "bcryptjs": "^3.0.2",
     "cloudinary": "^2.7.0",
     "headlessui": "^0.0.0",
+    "jsonwebtoken": "^9.0.2",
     "lucide-react": "^0.540.0",
     "mongoose": "^8.17.2",
     "next": "15.5.0",

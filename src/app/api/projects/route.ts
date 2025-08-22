@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/lib/mongodb';
+import connectToDatabase from '@/lib/db';
 import { Project, Task, User } from '@/models';
 import { IApiResponse, IProject, IProjectWithStats, IProjectFilter } from '@/types';
 import { verifyAuth } from '@/lib/auth';
@@ -7,7 +7,7 @@ import { verifyAuth } from '@/lib/auth';
 // GET /api/projects - Get projects with filters
 export async function GET(req: NextRequest) {
   try {
-    await connectDB();
+    await connectToDatabase();
     
     const authResult = await verifyAuth(req);
     if (!authResult.success) {
@@ -206,7 +206,7 @@ export async function GET(req: NextRequest) {
 // POST /api/projects - Create new project
 export async function POST(req: NextRequest) {
   try {
-    await connectDB();
+    await connectToDatabase();
     
     const authResult = await verifyAuth(req);
     if (!authResult.success) {

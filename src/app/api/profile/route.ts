@@ -1,6 +1,6 @@
 // app/api/profile/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/lib/mongodb';
+import connectToDatabase from '@/lib/db';
 import { User } from '@/models';
 import { IApiResponse, IUserProfile, IUserFilter } from '@/types';
 import { verifyAuth } from '@/lib/auth';
@@ -9,7 +9,7 @@ import { uploadToCloudinary } from '@/lib/cloudinary';
 // GET /api/profile - Get current user profile or list users (for admin)
 export async function GET(req: NextRequest) {
   try {
-    await connectDB();
+    await connectToDatabase();
     
     const authResult = await verifyAuth(req);
     if (!authResult.success) {
@@ -104,7 +104,7 @@ export async function GET(req: NextRequest) {
 // PUT /api/profile - Update current user profile
 export async function PUT(req: NextRequest) {
   try {
-    await connectDB();
+    await connectToDatabase();
     
     const authResult = await verifyAuth(req);
     if (!authResult.success) {
@@ -175,7 +175,7 @@ export async function PUT(req: NextRequest) {
 // POST /api/profile - Create new user (admin only)
 export async function POST(req: NextRequest) {
   try {
-    await connectDB();
+    await connectToDatabase();
     
     const authResult = await verifyAuth(req);
     if (!authResult.success) {
