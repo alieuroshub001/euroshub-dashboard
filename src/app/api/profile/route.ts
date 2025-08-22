@@ -1,413 +1,248 @@
 // app/api/profile/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
-import connectToDatabase from '@/lib/db';
-import User from '@/models/User';
-import { authOptions } from '@/lib/auth';
-import { uploadFile, deleteFile } from '@/lib/cloudinary';
-import { 
-  canPerformProfileAction, 
-  canViewProfileField, 
-  canEditProfileField,
-  canChangeUserRole 
-} from '@/types/modules/profile/permission';
-import { IUserProfile, IProfileUpdate } from '@/types/modules/profile';
-import { UserRole } from '@/types/common';
+import { connectDB } from '@/lib/mongodb';
+import { User } from '@/models';
+import { IApiResponse, IUserProfile, IUserFilter } from '@/types';
+import { verifyAuth } from '@/lib/auth';
+import { uploadToCloudinary } from '@/lib/cloudinary';
 
-interface AuthenticatedUser {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-}
-
-// GET /api/profile - Get profile(s)
-export async function GET(request: NextRequest) {
+// GET /api/profile - Get current user profile or list users (for admin)
+export async function GET(req: NextRequest) {
   try {
-    await connectToDatabase();
+    await connectDB();
     
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, message: 'Unauthorized' },
-        { status: 401 }
-      );
+    const authResult = await verifyAuth(req);
+    if (!authResult.success) {
+      return NextResponse.json<IApiResponse>({
+        success: false,
+        message: 'Unauthorized'
+      }, { status: 401 });
     }
 
-    const currentUser = session.user as AuthenticatedUser;
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
-    const action = searchParams.get('action') || 'view-own';
+    const { searchParams } = new URL(req.url);
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '10');
+    const search = searchParams.get('search') || '';
+    const role = searchParams.get('role');
+    const department = searchParams.get('department');
+    const isActive = searchParams.get('isActive');
 
-    // If userId is provided, get specific user profile
-    if (userId) {
-      const isOwnProfile = userId === currentUser.id;
-      
-      // Check permission to view this profile
-      if (!canPerformProfileAction(currentUser.role, 'read', isOwnProfile)) {
-        return NextResponse.json(
-          { success: false, message: 'Insufficient permissions' },
-          { status: 403 }
-        );
-      }
-
-      const user = await User.findById(userId).lean();
+    // If no query params, return current user profile
+    if (!searchParams.toString() || (searchParams.get('page') === '1' && searchParams.get('limit') === '10' && !search && !role && !department && !isActive)) {
+      const user = await User.findById(authResult.user.userId).select('-password');
       if (!user) {
-        return NextResponse.json(
-          { success: false, message: 'User not found' },
-          { status: 404 }
-        );
+        return NextResponse.json<IApiResponse>({
+          success: false,
+          message: 'User not found'
+        }, { status: 404 });
       }
 
-      // Filter fields based on permissions
-      const filteredUser = filterUserFields(user as unknown as IUserProfile, currentUser.role, isOwnProfile);
-
-      return NextResponse.json({
+      return NextResponse.json<IApiResponse<IUserProfile>>({
         success: true,
-        data: {
-          profile: filteredUser,
-          isOwnProfile,
-          permissions: {
-            canEdit: canPerformProfileAction(currentUser.role, 'update', isOwnProfile),
-            canDelete: canPerformProfileAction(currentUser.role, 'delete', isOwnProfile),
-            canViewAll: canPerformProfileAction(currentUser.role, 'read', false)
-          }
-        }
+        message: 'Profile retrieved successfully',
+        data: user.toObject()
       });
     }
 
-    // Get current user's own profile
-    const user = await User.findById(currentUser.id).lean();
-    if (!user) {
-      return NextResponse.json(
-        { success: false, message: 'User not found' },
-        { status: 404 }
-      );
+    // List users (admin only)
+    if (!['superadmin', 'admin', 'hr'].includes(authResult.user.role)) {
+      return NextResponse.json<IApiResponse>({
+        success: false,
+        message: 'Insufficient permissions'
+      }, { status: 403 });
     }
 
-    const filteredUser = filterUserFields(user as unknown as IUserProfile, currentUser.role, true);
+    // Build filter
+    const filter: any = {};
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { employeeId: { $regex: search, $options: 'i' } },
+        { department: { $regex: search, $options: 'i' } }
+      ];
+    }
+    if (role) filter.role = role;
+    if (department) filter.department = department;
+    if (isActive !== null) filter.isActive = isActive === 'true';
 
-    return NextResponse.json({
+    const skip = (page - 1) * limit;
+    
+    const [users, total] = await Promise.all([
+      User.find(filter)
+        .select('-password')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      User.countDocuments(filter)
+    ]);
+
+    return NextResponse.json<IApiResponse>({
       success: true,
+      message: 'Users retrieved successfully',
       data: {
-        profile: filteredUser,
-        isOwnProfile: true,
-        permissions: {
-          canEdit: true,
-          canDelete: false, // Users cannot delete their own profiles
-          canViewAll: canPerformProfileAction(currentUser.role, 'read', false)
+        users,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit)
         }
       }
     });
 
   } catch (error) {
     console.error('Profile GET error:', error);
-    return NextResponse.json(
-      { success: false, message: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json<IApiResponse>({
+      success: false,
+      message: 'Internal server error',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 });
   }
 }
 
-// PUT /api/profile - Update profile
-export async function PUT(request: NextRequest) {
+// PUT /api/profile - Update current user profile
+export async function PUT(req: NextRequest) {
   try {
-    await connectToDatabase();
+    await connectDB();
     
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, message: 'Unauthorized' },
-        { status: 401 }
-      );
+    const authResult = await verifyAuth(req);
+    if (!authResult.success) {
+      return NextResponse.json<IApiResponse>({
+        success: false,
+        message: 'Unauthorized'
+      }, { status: 401 });
     }
 
-    const currentUser = session.user as AuthenticatedUser;
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId') || currentUser.id;
-    const isOwnProfile = userId === currentUser.id;
+    const data = await req.json();
+    const {
+      name,
+      phone,
+      bio,
+      department,
+      position,
+      dateOfBirth,
+      address,
+      emergencyContact,
+      skills,
+      certifications,
+      socialLinks,
+      profileImage
+    } = data;
 
-    // Check permission to update this profile
-    if (!canPerformProfileAction(currentUser.role, 'update', isOwnProfile)) {
-      return NextResponse.json(
-        { success: false, message: 'Insufficient permissions' },
-        { status: 403 }
-      );
+    const user = await User.findById(authResult.user.userId);
+    if (!user) {
+      return NextResponse.json<IApiResponse>({
+        success: false,
+        message: 'User not found'
+      }, { status: 404 });
     }
 
-    const contentType = request.headers.get('content-type');
-    let updateData: Partial<IProfileUpdate & { role?: UserRole; profileImage?: string }>;
+    // Update fields
+    if (name) user.name = name;
+    if (phone) user.phone = phone;
+    if (bio !== undefined) user.bio = bio;
+    if (department) user.department = department;
+    if (position) user.position = position;
+    if (dateOfBirth) user.dateOfBirth = new Date(dateOfBirth);
+    if (address) user.address = address;
+    if (emergencyContact) user.emergencyContact = emergencyContact;
+    if (skills) user.skills = skills;
+    if (certifications) user.certifications = certifications;
+    if (socialLinks) user.socialLinks = socialLinks;
+    if (profileImage) user.profileImage = profileImage;
 
-    // Handle multipart form data (for image uploads)
-    if (contentType?.includes('multipart/form-data')) {
-      const formData = await request.formData();
-      updateData = {};
+    await user.save();
 
-      // Handle profile image upload
-      const imageFile = formData.get('profileImage') as File | null;
-      if (imageFile && imageFile.size > 0) {
-        // Validate image file
-        if (!imageFile.type.startsWith('image/')) {
-          return NextResponse.json(
-            { success: false, message: 'Only image files are allowed' },
-            { status: 400 }
-          );
-        }
+    const updatedUser = await User.findById(user._id).select('-password');
 
-        if (imageFile.size > 5 * 1024 * 1024) { // 5MB limit
-          return NextResponse.json(
-            { success: false, message: 'Image file must be less than 5MB' },
-            { status: 400 }
-          );
-        }
-
-        try {
-          // Convert file to buffer
-          const arrayBuffer = await imageFile.arrayBuffer();
-          const buffer = Buffer.from(arrayBuffer);
-
-          // Get current user to delete old profile image
-          const existingUser = await User.findById(userId);
-          if (existingUser?.profileImage) {
-            // Extract public_id from URL and delete old image
-            const urlParts = existingUser.profileImage.split('/');
-            const publicIdWithExtension = urlParts.slice(-2).join('/'); // folder/filename.ext
-            const publicId = publicIdWithExtension.replace(/\.[^/.]+$/, ''); // remove extension
-            await deleteFile(publicId, 'image');
-          }
-
-          // Upload new image
-          const uploadResult = await uploadFile(buffer, {
-            folder: 'profile-images',
-            resource_type: 'image',
-            allowed_formats: ['jpg', 'jpeg', 'png', 'webp'],
-            tags: ['profile', 'user-avatar']
-          }, currentUser.id);
-
-          if (uploadResult.attachments.length > 0) {
-            updateData.profileImage = uploadResult.attachments[0].secure_url;
-          } else {
-            return NextResponse.json(
-              { success: false, message: 'Failed to upload image' },
-              { status: 500 }
-            );
-          }
-        } catch (error) {
-          console.error('Image upload error:', error);
-          return NextResponse.json(
-            { success: false, message: 'Failed to upload image' },
-            { status: 500 }
-          );
-        }
-      }
-
-      // Parse other form fields
-      for (const [key, value] of formData.entries()) {
-        if (key !== 'profileImage' && typeof value === 'string') {
-          if (key.includes('.')) {
-            // Handle nested objects like address.street
-            const [parentKey, childKey] = key.split('.');
-            if (!updateData[parentKey as keyof typeof updateData]) {
-              (updateData as any)[parentKey] = {};
-            }
-            (updateData as any)[parentKey][childKey] = value || undefined;
-          } else if (key === 'skills') {
-            // Handle array fields
-            updateData.skills = value ? value.split(',').map(s => s.trim()) : [];
-          } else {
-            (updateData as any)[key] = value || undefined;
-          }
-        }
-      }
-    } else {
-      // Handle JSON data
-      updateData = await request.json();
-    }
-
-    // Validate and filter update data based on permissions
-    const allowedUpdates: Partial<IUserProfile> = {};
-    
-    for (const [key, value] of Object.entries(updateData)) {
-      if (canEditProfileField(currentUser.role, key, isOwnProfile)) {
-        // Special handling for role changes
-        if (key === 'role' && value) {
-          if (!canChangeUserRole(currentUser.role, value as UserRole)) {
-            return NextResponse.json(
-              { success: false, message: 'Cannot change to this role' },
-              { status: 403 }
-            );
-          }
-        }
-        
-        (allowedUpdates as any)[key] = value;
-      }
-    }
-
-    // Validate required fields for certifications
-    if (allowedUpdates.certifications) {
-      for (const cert of allowedUpdates.certifications) {
-        if (!cert.name || !cert.issuer || !cert.issueDate) {
-          return NextResponse.json(
-            { success: false, message: 'Certification name, issuer, and issue date are required' },
-            { status: 400 }
-          );
-        }
-      }
-    }
-
-    // Validate emergency contact if provided
-    if (allowedUpdates.emergencyContact) {
-      const ec = allowedUpdates.emergencyContact;
-      if (!ec.name || !ec.relationship || !ec.phone) {
-        return NextResponse.json(
-          { success: false, message: 'Emergency contact name, relationship, and phone are required' },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Update user profile
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      { ...allowedUpdates, updatedAt: new Date() },
-      { new: true, runValidators: true }
-    ).lean();
-
-    if (!updatedUser) {
-      return NextResponse.json(
-        { success: false, message: 'User not found' },
-        { status: 404 }
-      );
-    }
-
-    // Filter response based on permissions
-    const filteredUser = filterUserFields(updatedUser as unknown as IUserProfile, currentUser.role, isOwnProfile);
-
-    return NextResponse.json({
+    return NextResponse.json<IApiResponse<IUserProfile>>({
       success: true,
       message: 'Profile updated successfully',
-      data: { profile: filteredUser }
+      data: updatedUser?.toObject()
     });
 
   } catch (error) {
     console.error('Profile PUT error:', error);
-    
-    // Handle validation errors
-    if (error instanceof Error && error.name === 'ValidationError') {
-      return NextResponse.json(
-        { success: false, message: error.message },
-        { status: 400 }
-      );
-    }
-
-    return NextResponse.json(
-      { success: false, message: 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json<IApiResponse>({
+      success: false,
+      message: 'Internal server error',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 });
   }
 }
 
-// DELETE /api/profile - Delete profile (Admin only)
-export async function DELETE(request: NextRequest) {
+// POST /api/profile - Create new user (admin only)
+export async function POST(req: NextRequest) {
   try {
-    await connectToDatabase();
+    await connectDB();
     
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, message: 'Unauthorized' },
-        { status: 401 }
-      );
+    const authResult = await verifyAuth(req);
+    if (!authResult.success) {
+      return NextResponse.json<IApiResponse>({
+        success: false,
+        message: 'Unauthorized'
+      }, { status: 401 });
     }
 
-    const currentUser = session.user as AuthenticatedUser;
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
-
-    if (!userId) {
-      return NextResponse.json(
-        { success: false, message: 'User ID is required' },
-        { status: 400 }
-      );
+    // Only admins can create users
+    if (!['superadmin', 'admin', 'hr'].includes(authResult.user.role)) {
+      return NextResponse.json<IApiResponse>({
+        success: false,
+        message: 'Insufficient permissions'
+      }, { status: 403 });
     }
 
-    const isOwnProfile = userId === currentUser.id;
+    const data = await req.json();
+    const { name, email, role = 'employee', password, ...profileData } = data;
 
-    // Check permission to delete profile
-    if (!canPerformProfileAction(currentUser.role, 'delete', isOwnProfile)) {
-      return NextResponse.json(
-        { success: false, message: 'Insufficient permissions' },
-        { status: 403 }
-      );
+    if (!name || !email || !password) {
+      return NextResponse.json<IApiResponse>({
+        success: false,
+        message: 'Name, email, and password are required'
+      }, { status: 400 });
     }
 
-    // Prevent self-deletion
-    if (isOwnProfile) {
-      return NextResponse.json(
-        { success: false, message: 'Cannot delete your own profile' },
-        { status: 400 }
-      );
+    // Check if user already exists
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return NextResponse.json<IApiResponse>({
+        success: false,
+        message: 'User with this email already exists'
+      }, { status: 409 });
     }
 
-    // Get user before deletion to clean up profile image
-    const user = await User.findById(userId);
-    if (!user) {
-      return NextResponse.json(
-        { success: false, message: 'User not found' },
-        { status: 404 }
-      );
-    }
+    // Hash password
+    const bcrypt = require('bcryptjs');
+    const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Delete profile image from Cloudinary if exists
-    if (user.profileImage) {
-      try {
-        const urlParts = user.profileImage.split('/');
-        const publicIdWithExtension = urlParts.slice(-2).join('/');
-        const publicId = publicIdWithExtension.replace(/\.[^/.]+$/, '');
-        await deleteFile(publicId, 'image');
-      } catch (error) {
-        console.warn('Failed to delete profile image:', error);
-      }
-    }
-
-    // Delete user
-    await User.findByIdAndDelete(userId);
-
-    return NextResponse.json({
-      success: true,
-      message: 'User profile deleted successfully'
+    // Create user
+    const user = new User({
+      name,
+      email: email.toLowerCase(),
+      password: hashedPassword,
+      role,
+      emailVerified: true, // Admin created users are pre-verified
+      isActive: true,
+      ...profileData
     });
 
+    await user.save();
+
+    const newUser = await User.findById(user._id).select('-password');
+
+    return NextResponse.json<IApiResponse<IUserProfile>>({
+      success: true,
+      message: 'User created successfully',
+      data: newUser?.toObject()
+    }, { status: 201 });
+
   } catch (error) {
-    console.error('Profile DELETE error:', error);
-    return NextResponse.json(
-      { success: false, message: 'Internal server error' },
-      { status: 500 }
-    );
+    console.error('Profile POST error:', error);
+    return NextResponse.json<IApiResponse>({
+      success: false,
+      message: 'Internal server error',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 });
   }
-}
-
-// Helper function to filter user fields based on permissions
-function filterUserFields(user: IUserProfile, userRole: UserRole, isOwnProfile: boolean): Partial<IUserProfile> {
-  const filtered: Partial<IUserProfile> = {};
-
-  // Always include basic identifying information
-  filtered._id = user._id;
-  filtered.name = user.name;
-
-  // Check each field permission
-  const fields: (keyof IUserProfile)[] = [
-    'email', 'role', 'phone', 'profileImage', 'employeeId', 'emailVerified', 
-    'isActive', 'bio', 'department', 'position', 'dateOfJoining', 'dateOfBirth',
-    'address', 'emergencyContact', 'skills', 'certifications', 'socialLinks',
-    'createdAt', 'updatedAt'
-  ];
-
-  for (const field of fields) {
-    if (canViewProfileField(userRole, field, isOwnProfile) && user[field] !== undefined) {
-      (filtered as any)[field] = user[field];
-    }
-  }
-
-  return filtered;
 }
